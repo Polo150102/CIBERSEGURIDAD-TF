@@ -1,0 +1,30 @@
+import os
+from dotenv import load_dotenv
+from sqlmodel import SQLModel, create_engine, Session
+
+load_dotenv()
+
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_PORT = os.getenv("DB_PORT", "3306")
+DB_NAME = os.getenv("DB_NAME", "sidpol_db")
+DB_USER = os.getenv("DB_USER", "sidpol_user")
+DB_PASS = os.getenv("DB_PASS", "Sidpol123!")
+
+DATABASE_URL = (
+    f"mysql+pymysql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+    "?charset=utf8mb4"
+)
+
+engine = create_engine(
+    DATABASE_URL,
+    echo=False,
+    pool_pre_ping=True,   # evita conexiones muertas
+    pool_recycle=1800     # recicla conexiones (útil en MySQL)
+)
+
+def create_db_and_tables() -> None:
+    SQLModel.metadata.create_all(engine)
+
+def get_session():
+    with Session(engine) as session:
+        yield session
