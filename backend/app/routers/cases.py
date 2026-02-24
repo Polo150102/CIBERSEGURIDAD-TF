@@ -17,6 +17,7 @@ from sqlmodel import Session, select
 from app.db import get_session
 from app.models import AuditLog, Case, Citizen, Evidence, User, Actuation, ExternalQuery
 from app.security import get_current_user, require_role
+from app.models import InboxMessage
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT
@@ -45,6 +46,21 @@ def _fill_line(text: str, total: int = 60) -> str:
     if len(t) >= total:
         return t[:total]
     return t + " " + ("_" * (total - len(t) - 1))
+
+def _push_inbox(session: Session, recipient: str, type_: str, priority: str, sender: str, title: str, preview: str, case_id: int | None = None):
+    msg = InboxMessage(
+        recipient=recipient,
+        type=type_,
+        priority=priority,
+        sender=sender,
+        title=title,
+        preview=preview,
+        case_id=case_id,
+        read=False,
+        created_at=_now_iso(),
+    )
+    session.add(msg)
+    session.commit()
 
 
 def _client_ip(request: Request) -> str:
@@ -252,6 +268,17 @@ def create_case(
     session.add(c)
     session.commit()
     session.refresh(c)
+
+    _push_inbox(
+        session=session,
+        recipient=cip,
+        type_="ALERTA",
+        priority="high",
+        sender="Sistema Automatizado",
+        title=f"Nueva Denuncia Registrada: {c.incident_type}",
+        preview=f"Se registró una nueva denuncia mediante el portal. Exp. 2026-{str(c.id).zfill(5)} | DNI: {dni} | Lugar: {location}",
+        case_id=c.id,
+    )
     
 
     if not c.id:
@@ -978,6 +1005,17 @@ def add_actuation(
     session.add(act)
     session.commit()
     session.refresh(act)
+
+    _push_inbox(
+        session=session,
+        recipient=c.created_by,  # dueño del expediente
+        type_="ALERTA",
+        priority="medium",
+        sender="Sistema Automatizado",
+        title=f"Actualización de Denuncia: Exp. 2026-{str(case_id).zfill(5)}",
+        preview=f"Se registró una nueva actuación: {act.title} ({act.type} - {act.status}).",
+        case_id=case_id,
+    )
 
     _audit(session, payload["sub"], "ADD_ACTUATION", {"case_id": case_id, "ip": _client_ip(request)})
 

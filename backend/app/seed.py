@@ -4,7 +4,8 @@ from app.security import hash_password
 from datetime import date
 from app.models import User, Citizen
 from app.twofa import generate_base32_secret
-
+from app.models import InboxMessage
+from datetime import datetime
 
 def seed_users(session: Session):
     # Operadores (login por CIP)
@@ -93,5 +94,35 @@ def seed_citizens(session: Session):
             nacimiento=date.fromisoformat(c["nacimiento"]),  # ✅ importante
         )
         session.add(citizen)
+
+    session.commit()
+
+def seed_inbox(session: Session):
+    # Si ya existe al menos 1 mensaje global, no reinsertar
+    exists = session.exec(select(InboxMessage).where(InboxMessage.recipient == "ALL")).first()
+    if exists:
+        return
+
+    now = datetime.utcnow().isoformat()
+
+    session.add(InboxMessage(
+        recipient="ALL",
+        type="SISTEMA",
+        priority="critical",
+        sender="Infraestructura DIRTIC",
+        title="Mantenimiento Preventivo de Servidores Centrales",
+        preview="Hoy se realizará un reinicio preventivo de la base ESINPOL entre las 23:00 y 23:30.",
+        created_at=now,
+    ))
+
+    session.add(InboxMessage(
+        recipient="ALL",
+        type="MEMO",
+        priority="medium",
+        sender="Oficina de Tecnología",
+        title="Buenas prácticas de seguridad operativa",
+        preview="Recuerde no compartir credenciales, activar 2FA y reportar actividad sospechosa.",
+        created_at=now,
+    ))
 
     session.commit()

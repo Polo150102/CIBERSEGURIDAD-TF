@@ -100,3 +100,22 @@ class ExternalQuery(SQLModel, table=True):
     status: str       # COMPLETADO / ERROR
     result_summary: str
     created_at: str
+
+class InboxMessage(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+
+    # destinatario (CIP del operador) o "ALL" para mensajes informativos globales
+    recipient: str = Field(index=True, default="ALL")
+
+    type: str = Field(default="SISTEMA")       # ALERTA / MEMO / SISTEMA / RENIEC
+    priority: str = Field(default="medium")    # critical / high / medium
+    sender: str = Field(default="Sistema Automatizado")
+
+    title: str
+    preview: str
+
+    # opcional: amarrar al expediente
+    case_id: Optional[int] = Field(default=None, index=True)
+
+    read: bool = Field(default=False)
+    created_at: str

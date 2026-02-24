@@ -227,3 +227,24 @@ export async function createActuation(
   }
   return data;
 }
+
+export async function getInbox() {
+  const res = await fetch(`${API_URL}/inbox`, {
+    method: "GET",
+    headers: { ...authHeaders() },
+  });
+  const data = await res.json().catch(() => []);
+  if (!res.ok) throw new Error(data?.detail || "Error cargando bandeja");
+  return data;
+}
+
+export async function markInboxRead(id: number) {
+  const res = await fetch(`${API_URL}/inbox/${id}/read`, {
+    method: "PATCH",
+    headers: { ...authHeaders() },
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.detail || "No se pudo marcar como leído");
+  return data;
+}
