@@ -7,6 +7,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Tuple
+from fastapi.responses import FileResponse
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
@@ -170,6 +171,12 @@ class CreateCaseSchema(BaseModel):
 class SubmitCaseSchema(BaseModel):
     declaration_accepted: bool = True
 
+class ActuationCreateSchema(BaseModel):
+    title: str
+    type: str = "ACTA"
+    status: str = "PENDIENTE"
+    occurred_at: str | None = None
+    detail: str | None = None 
 
 # =========================
 # RENIEC validate (mock)
@@ -471,6 +478,7 @@ ALLOWED_CONTENT_TYPES = {
 MAX_FILE_BYTES = 10 * 1024 * 1024  # 10MB
 
 
+
 @router.post("/{case_id}/evidences")
 async def upload_evidence(
     case_id: int,
@@ -537,6 +545,36 @@ async def upload_evidence(
     )
     return ev
 
+@router.get("/{case_id}/evidences/{evidence_id}/download")
+def download_evidence(
+    case_id: int,
+    evidence_id: int,
+    request: Request,
+    session: Session = Depends(get_session),
+    payload=Depends(require_role("admin", "operador", "auditor")),
+):
+    c = session.get(Case, case_id)
+    if not c:
+        raise HTTPException(status_code=404, detail="Caso no encontrado")
+
+    if payload["role"] == "operador" and c.created_by != payload["sub"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+
+    ev = session.get(Evidence, evidence_id)
+    if not ev or ev.case_id != case_id:
+        raise HTTPException(status_code=404, detail="Evidencia no encontrada")
+
+    if not ev.filepath or not os.path.exists(ev.filepath):
+        raise HTTPException(status_code=404, detail="Archivo no existe en storage")
+
+    _audit(session, payload["sub"], "DOWNLOAD_EVIDENCE", {"case_id": case_id, "evidence_id": evidence_id, "ip": _client_ip(request)})
+
+    # Fuerza descarga (attachment). Si quieres vista en navegador, cambia a inline.
+    return FileResponse(
+        path=ev.filepath,
+        media_type=ev.content_type or "application/octet-stream",
+        filename=ev.filename,
+    )
 
 # =========================
 # Cargo / Acta PDF
@@ -833,6 +871,7 @@ def case_detail(
                 "responsable": a.responsible,
                 "tipo": a.type,
                 "estado": a.status,
+                "detalle": a.detail, 
             } for a in acts
         ],
 
@@ -855,6 +894,72 @@ def case_detail(
                 "created_at": q.created_at,
             } for q in ext
         ],
+    }
+
+@router.post("/{case_id}/actuations")
+def add_actuation(
+    case_id: int,
+    body: ActuationCreateSchema,
+    request: Request,
+    session: Session = Depends(get_session),
+    payload=Depends(require_role("admin", "operador", "auditor")),
+):
+    c = session.get(Case, case_id)
+    if not c:
+        raise HTTPException(status_code=404, detail="Caso no encontrado")
+
+    if payload["role"] == "operador" and c.created_by != payload["sub"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+
+    title = (body.title or "").strip()
+    if len(title) < 4:
+        raise HTTPException(status_code=400, detail="Título muy corto")
+
+    a_type = (body.type or "ACTA").upper().strip()
+    a_status = (body.status or "PENDIENTE").upper().strip()
+
+    allowed_types = {"ACTA", "OFICIO", "CONSULTA", "EVIDENCIA"}
+    allowed_status = {"PENDIENTE", "COMPLETADO", "DIGITALIZADO"}
+    if a_type not in allowed_types:
+        raise HTTPException(status_code=400, detail="Tipo inválido")
+    if a_status not in allowed_status:
+        raise HTTPException(status_code=400, detail="Estado inválido")
+
+    occurred = body.occurred_at or datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+
+    # Responsable = usuario autenticado (CIP + nombre si existe)
+    u = session.exec(select(User).where(User.cip == payload["sub"])).first()
+    responsible = f"{payload['sub']} {u.full_name}" if u else payload["sub"]
+
+    detail = (body.detail or "").strip()
+
+    act = Actuation(
+        case_id=case_id,
+        occurred_at=occurred,
+        title=title,
+        responsible=responsible,
+        type=a_type,
+        status=a_status,
+        detail=detail,        
+        created_at=_now_iso(),
+    )
+    session.add(act)
+    session.commit()
+    session.refresh(act)
+
+    _audit(session, payload["sub"], "ADD_ACTUATION", {"case_id": case_id, "ip": _client_ip(request)})
+
+    return {
+        "ok": True,
+        "actuation": {
+            "id": act.id,
+            "fecha": act.occurred_at,
+            "titulo": act.title,
+            "responsable": act.responsible,
+            "tipo": act.type,
+            "estado": act.status,
+            "detalle": act.detail,   # ✅ NUEVO
+        },
     }
 
 def _run_external_mock(system: str, dni: str) -> str:

@@ -7,11 +7,13 @@ import { ModernRegistration } from './components/ModernRegistration';
 import { ModernManagement } from './components/ModernManagement';
 import { ModernCaseDetail } from './components/ModernCaseDetail';
 import { Toaster } from "sonner";
+import { ModernIntelligenceQuery } from './components/ModernIntelligenceQuery';
 
 export default function App() {
   const [user, setUser] = useState<any>(null);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [selectedCase, setSelectedCase] = useState<string | null>(null);
+  
 
   const handleLogin = (userData: any) => {
     setUser(userData);
@@ -25,17 +27,26 @@ export default function App() {
   };
 
   const renderContent = () => {
-    if (selectedCase) {
-      return <ModernCaseDetail caseId={selectedCase} onBack={() => setSelectedCase(null)} />;
+    if (activeTab === "management" && selectedCase) {
+      return (
+        <ModernCaseDetail
+          caseId={String(selectedCase)}
+          onBack={() => setSelectedCase(null)}
+        />
+      );
     }
 
     switch (activeTab) {
-      case 'inbox':
+      case "inbox":
         return <ModernInbox />;
-      case 'registration':
+      case "registration":
         return <ModernRegistration />;
-      case 'management':
+      case "management":
         return <ModernManagement onSelectCase={(id) => setSelectedCase(id)} />;
+      case "esinpol":
+        return <ModernIntelligenceQuery system="ESINPOL" />;
+      case "requisitorias":
+        return <ModernIntelligenceQuery system="RQ" />;
       case 'dashboard':
       default:
         return (

@@ -1,30 +1,15 @@
 services:
-  mysql:
-    image: mysql:8.0
-    container_name: sidpol-mysql
-    environment:
-      MYSQL_DATABASE: sidpol_db
-      MYSQL_USER: sidpol_user
-      MYSQL_PASSWORD: Sidpol123!
-      MYSQL_ROOT_PASSWORD: Root123!
-    ports:
-      - "3306:3306"
-    volumes:
-      - mysql_data:/var/lib/mysql
-    command: ["mysqld", "--default-authentication-plugin=mysql_native_password"]
-    healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$${MYSQL_ROOT_PASSWORD} --silent"]
-      interval: 5s
-      timeout: 3s
-      retries: 30
-
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     container_name: sidpol-backend
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
     environment:
-      DB_HOST: mysql
+      #DB_HOST: "192.168.1.52"
+      DB_HOST: "host.docker.internal"
       DB_PORT: "3306"
       DB_NAME: sidpol_db
       DB_USER: sidpol_user
@@ -33,11 +18,8 @@ services:
       SEED_USERS: "true"
     ports:
       - "8000:8000"
-    depends_on:
-      mysql:
-        condition: service_healthy
-        
-
+    volumes:
+      - ./backend/storage:/app/storage
 
   frontend:
     build: ./frontend
@@ -46,8 +28,7 @@ services:
       - "3000:3000"
     environment:
       - VITE_API_URL=http://localhost:8000
+    #  - VITE_API_URL=http://TU_IP_DE_VM2:8000
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "3000"]
     depends_on:
       - backend
-
-volumes:
-  mysql_data:

@@ -1,33 +1,40 @@
-import React from 'react';
-import { 
-  LayoutDashboard, 
-  Inbox, 
-  FilePlus, 
-  Search, 
-  Database, 
-  Settings, 
+import React from "react";
+import {
+  LayoutDashboard,
+  Inbox,
+  FilePlus,
+  Database,
+  Settings,
   HelpCircle,
   Archive,
-  Fingerprint
-} from 'lucide-react';
+  Fingerprint,
+} from "lucide-react";
 
 interface ModernSidebarProps {
   activeTab: string;
   onTabChange: (tab: string) => void;
   badgeCount?: number;
+
+  // ✅ NUEVO: para limpiar el expediente abierto (selectedCaseId) desde el padre
+  onClearSelectedCase?: () => void;
 }
 
-export const ModernSidebar: React.FC<ModernSidebarProps> = ({ activeTab, onTabChange, badgeCount = 12 }) => {
+export const ModernSidebar: React.FC<ModernSidebarProps> = ({
+  activeTab,
+  onTabChange,
+  badgeCount = 12,
+  onClearSelectedCase,
+}) => {
   const primaryMenu = [
-    { id: 'dashboard', label: 'Panel de Control', icon: LayoutDashboard },
-    { id: 'inbox', label: 'Bandeja de Entrada', icon: Inbox, count: badgeCount },
-    { id: 'registration', label: 'Nueva Denuncia', icon: FilePlus },
-    { id: 'management', label: 'Mis Expedientes', icon: Archive },
+    { id: "dashboard", label: "Panel de Control", icon: LayoutDashboard },
+    { id: "inbox", label: "Bandeja de Entrada", icon: Inbox, count: badgeCount },
+    { id: "registration", label: "Nueva Denuncia", icon: FilePlus },
+    { id: "management", label: "Mis Expedientes", icon: Archive },
   ];
 
   const secondaryMenu = [
-    { id: 'esinpol', label: 'Consultas ESINPOL', icon: Database },
-    { id: 'requisitorias', label: 'Requisitorias (RQ)', icon: Fingerprint },
+    { id: "esinpol", label: "Consultas ESINPOL", icon: Database },
+    { id: "requisitorias", label: "Requisitorias (RQ)", icon: Fingerprint },
   ];
 
   return (
@@ -35,25 +42,41 @@ export const ModernSidebar: React.FC<ModernSidebarProps> = ({ activeTab, onTabCh
       <div className="flex-1 py-6 px-3 space-y-8">
         {/* Primary Section */}
         <div className="space-y-1">
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-3 mb-2">Operativo</p>
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-3 mb-2">
+            Operativo
+          </p>
+
           {primaryMenu.map((item) => (
             <button
               key={item.id}
-              onClick={() => onTabChange(item.id)}
+              onClick={() => {
+                // ✅ Si me voy a otro módulo distinto a "Mis Expedientes",
+                // limpio el expediente abierto para que NO se quede pegado en el detalle.
+                if (item.id !== "management") {
+                  onClearSelectedCase?.();
+                }
+                onTabChange(item.id);
+              }}
               className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition-all ${
-                activeTab === item.id 
-                  ? 'bg-blue-50 text-blue-700 font-semibold shadow-sm border border-blue-100' 
-                  : 'text-slate-600 hover:bg-slate-50 font-medium'
+                activeTab === item.id
+                  ? "bg-blue-50 text-blue-700 font-semibold shadow-sm border border-blue-100"
+                  : "text-slate-600 hover:bg-slate-50 font-medium"
               }`}
             >
               <div className="flex items-center gap-3">
-                <item.icon size={18} className={activeTab === item.id ? 'text-blue-600' : 'text-slate-400'} />
+                <item.icon
+                  size={18}
+                  className={activeTab === item.id ? "text-blue-600" : "text-slate-400"}
+                />
                 <span className="text-sm">{item.label}</span>
               </div>
+
               {item.count !== undefined && item.count > 0 && (
-                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-                  activeTab === item.id ? 'bg-blue-600 text-white' : 'bg-red-500 text-white'
-                }`}>
+                <span
+                  className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                    activeTab === item.id ? "bg-blue-600 text-white" : "bg-red-500 text-white"
+                  }`}
+                >
                   {item.count}
                 </span>
               )}
@@ -63,19 +86,30 @@ export const ModernSidebar: React.FC<ModernSidebarProps> = ({ activeTab, onTabCh
 
         {/* Intelligence Section */}
         <div className="space-y-1">
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-3 mb-2">Inteligencia</p>
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-3 mb-2">
+            Inteligencia
+          </p>
+
           {secondaryMenu.map((item) => (
             <button
               key={item.id}
-              onClick={() => onTabChange(item.id)}
+              onClick={() => {
+                // ✅ También limpiamos si estaba un expediente abierto
+                // (porque esto NO es "management")
+                onClearSelectedCase?.();
+                onTabChange(item.id);
+              }}
               className={`w-full flex items-center px-3 py-2.5 rounded-xl transition-all ${
-                activeTab === item.id 
-                  ? 'bg-blue-50 text-blue-700 font-semibold shadow-sm border border-blue-100' 
-                  : 'text-slate-600 hover:bg-slate-50 font-medium'
+                activeTab === item.id
+                  ? "bg-blue-50 text-blue-700 font-semibold shadow-sm border border-blue-100"
+                  : "text-slate-600 hover:bg-slate-50 font-medium"
               }`}
             >
               <div className="flex items-center gap-3">
-                <item.icon size={18} className={activeTab === item.id ? 'text-blue-600' : 'text-slate-400'} />
+                <item.icon
+                  size={18}
+                  className={activeTab === item.id ? "text-blue-600" : "text-slate-400"}
+                />
                 <span className="text-sm">{item.label}</span>
               </div>
             </button>

@@ -125,6 +125,37 @@ export async function downloadCargo(caseId: number) {
   }, 1500);
 }
 
+export async function downloadEvidence(caseId: string, evidenceId: number, filename: string) {
+  const res = await fetch(`${API_URL}/cases/${caseId}/evidences/${evidenceId}/download`, {
+    method: "GET",
+    headers: { ...authHeaders() },
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    try {
+      const data = JSON.parse(text);
+      throw new Error(data?.detail || "No se pudo descargar la evidencia");
+    } catch {
+      throw new Error("No se pudo descargar la evidencia");
+    }
+  }
+
+  const blob = await res.blob();
+  const url = window.URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename || `evidencia_${evidenceId}`;
+  document.body.appendChild(a);
+  a.click();
+
+  setTimeout(() => {
+    window.URL.revokeObjectURL(url);
+    a.remove();
+  }, 1500);
+}
+
 export async function getManagementDashboard(page = 1, pageSize = 10) {
   const res = await fetch(
     `${API_URL}/cases/management/dashboard?page=${page}&page_size=${pageSize}`,
@@ -165,6 +196,33 @@ export async function runExternalQuery(caseId: string, system: "ESINPOL" | "RQ")
       typeof data?.detail === "string"
         ? data.detail
         : JSON.stringify(data?.detail || data || "Error ejecutando consulta");
+    throw new Error(msg);
+  }
+  return data;
+}
+
+export async function createActuation(
+  caseId: string,
+  payload: {
+    title: string;
+    type: "ACTA" | "OFICIO" | "CONSULTA" | "EVIDENCIA";
+    status: "PENDIENTE" | "COMPLETADO" | "DIGITALIZADO";
+    occurred_at?: string;
+    detail?: string;
+  }
+) {
+  const res = await fetch(`${API_URL}/cases/${caseId}/actuations`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const msg =
+      typeof data?.detail === "string"
+        ? data.detail
+        : JSON.stringify(data?.detail || data || "Error creando actuación");
     throw new Error(msg);
   }
   return data;

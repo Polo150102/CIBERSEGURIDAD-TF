@@ -85,11 +85,11 @@ class Actuation(SQLModel, table=True):
     occurred_at: str  # "YYYY-MM-DD HH:MM"
     title: str
     responsible: str
-    type: str         # ACTA / CONSULTA / OFICIO
+    type: str         # ACTA / CONSULTA / OFICIO / EVIDENCIA
     status: str       # DIGITALIZADO / COMPLETADO / PENDIENTE
 
+    detail: str = "" 
     created_at: str
-
 
 class ExternalQuery(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)

@@ -58,6 +58,38 @@ export const ModernRegistration: React.FC = () => {
   const [incidentType, setIncidentType] = useState("ROBO AGRAVADO");
   const [location, setLocation] = useState("");
 
+    // Reinicia el flujo completo para crear una nueva denuncia
+  const resetRegistration = () => {
+    setStep(1);
+    setRemaining(SESSION_LIMIT);
+
+    // identidad
+    setDni("");
+    setIsVerifying(false);
+    setVerifiedData(null);
+
+    // datos del caso
+    setIncidentType("ROBO AGRAVADO");
+    setLocation("");
+    setDescription("");
+
+    // subida / estados
+    setCaseId(null);
+    setFiles([]);
+    setIsSubmitting(false);
+    setIsSuccess(false);
+    setErrorMsg(null);
+    setIntegrityHash(null);
+
+    // limpia input file si existe
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+
+    // opcional: volver arriba
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
 
   useEffect(() => {
     const t = setInterval(() => {

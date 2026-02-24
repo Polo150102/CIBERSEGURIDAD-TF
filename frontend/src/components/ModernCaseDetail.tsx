@@ -10,11 +10,10 @@ import {
   CheckCircle2,
   FileSearch,
   ExternalLink,
-  MessageSquare,
   AlertCircle,
 } from "lucide-react";
 
-import { getCaseDetail, runExternalQuery } from "../api/cases";
+import { getCaseDetail, createActuation, downloadCargo, downloadEvidence } from "../api/cases";
 
 interface CaseDetailProps {
   caseId: string;
@@ -27,7 +26,8 @@ type ActuationUI = {
   titulo: string;
   responsable: string;
   tipo: string;
-  estado: string; // DIGITALIZADO / COMPLETADO / PENDIENTE (desde backend)
+  estado: string;
+  detalle?: string; 
 };
 
 type EvidenceUI = {
@@ -38,14 +38,30 @@ type EvidenceUI = {
   created_at: string;
 };
 
+type TabId = "actuaciones" | "evidencias" | "actualizar";
+
 export const ModernCaseDetail: React.FC<CaseDetailProps> = ({ caseId, onBack }) => {
-  const [activeTab, setActiveTab] = useState("actuaciones");
+  const [activeTab, setActiveTab] = useState<TabId>("actuaciones");
 
   const [loading, setLoading] = useState(true);
-  const [loadingQuery, setLoadingQuery] = useState<null | "ESINPOL" | "RQ">(null);
   const [error, setError] = useState<string | null>(null);
 
+  // error exclusivo del tab "Actualizar Denuncia"
+  const [updateError, setUpdateError] = useState<string | null>(null);
+
   const [detail, setDetail] = useState<any>(null);
+
+  // ====== Modal detalle de actuación ======
+  const [selectedAct, setSelectedAct] = useState<ActuationUI | null>(null);
+
+  // ====== Estado del TAB "Actualizar Denuncia" ======
+  const [updTitulo, setUpdTitulo] = useState("");
+  const [updTipo, setUpdTipo] = useState<"ACTA" | "OFICIO" | "CONSULTA" | "EVIDENCIA">("ACTA");
+  const [updEstado, setUpdEstado] = useState<"PENDIENTE" | "COMPLETADO" | "DIGITALIZADO">(
+    "PENDIENTE"
+  );
+  const [updDetalle, setUpdDetalle] = useState("");
+  const [savingUpdate, setSavingUpdate] = useState(false);
 
   async function loadDetail() {
     try {
@@ -55,6 +71,7 @@ export const ModernCaseDetail: React.FC<CaseDetailProps> = ({ caseId, onBack }) 
       setDetail(d);
     } catch (e: any) {
       setError(e?.message || "Error cargando detalle del expediente");
+      setDetail(null);
     } finally {
       setLoading(false);
     }
@@ -68,7 +85,6 @@ export const ModernCaseDetail: React.FC<CaseDetailProps> = ({ caseId, onBack }) 
   const actuaciones: ActuationUI[] = useMemo(() => detail?.actuations || [], [detail]);
   const evidencias: EvidenceUI[] = useMemo(() => detail?.evidences || [], [detail]);
 
-  // Helpers UI para estado de actuación
   const estadoLabel = (estado: string) => {
     const s = (estado || "").toUpperCase();
     if (s === "PENDIENTE") return "Pendiente";
@@ -80,7 +96,6 @@ export const ModernCaseDetail: React.FC<CaseDetailProps> = ({ caseId, onBack }) 
   const estadoIsPending = (estado: string) => (estado || "").toUpperCase() === "PENDIENTE";
 
   const badgeInvestigacion = () => {
-    // puedes mapear según tu backend: SUBMITTED/...
     const s = (detail?.status || "").toUpperCase();
     if (s === "SUBMITTED") return "INVESTIGACIÓN ACTIVA";
     if (s === "DRAFT") return "PENDIENTE DE FIRMA";
@@ -95,23 +110,65 @@ export const ModernCaseDetail: React.FC<CaseDetailProps> = ({ caseId, onBack }) 
     return `Delito: ${delito} | Agraviado: ${agraviado} | Instructor: ${instructor}`;
   };
 
-  async function handleExternal(system: "ESINPOL" | "RQ") {
+  const kb = (bytes: number) => Math.round((Number(bytes || 0) / 1024) * 1) / 1;
+
+  const resetActualizarForm = () => {
+    setUpdTitulo("");
+    setUpdTipo("ACTA");
+    setUpdEstado("PENDIENTE");
+    setUpdDetalle("");
+    setUpdateError(null);
+  };
+
+  const handleIrActualizar = () => {
+    setActiveTab("actualizar");
+    setUpdateError(null);
     try {
-      setLoadingQuery(system);
-      setError(null);
-      await runExternalQuery(caseId, system);
-      // refresca detalle para que aparezca la actuación nueva
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch {
+      // ignore
+    }
+  };
+
+  async function handleGuardarActualizacion() {
+    if (updTitulo.trim().length < 4) {
+      setUpdateError("El título debe tener al menos 4 caracteres.");
+      return;
+    }
+
+    try {
+      setSavingUpdate(true);
+      setUpdateError(null);
+
+      // ✅ Guardar en backend
+      await createActuation(caseId, {
+        title: updTitulo.trim(),
+        type: updTipo,
+        status: updEstado,
+        detail: updDetalle.trim(), 
+      });
+
+      // ✅ Refrescar y volver al historial
       await loadDetail();
+      setActiveTab("actuaciones");
+      resetActualizarForm();
+
+      try {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      } catch {
+        // ignore
+      }
     } catch (e: any) {
-      setError(e?.message || `Error ejecutando ${system}`);
+      // error SOLO del tab actualizar
+      setUpdateError(e?.message || "Error guardando la actualización");
     } finally {
-      setLoadingQuery(null);
+      setSavingUpdate(false);
     }
   }
 
   return (
     <div className="flex-1 bg-white flex flex-col overflow-hidden animate-in fade-in duration-300">
-      {/* Detail Header */}
+      {/* Header */}
       <div className="bg-slate-900 text-white p-6 shrink-0">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-4">
@@ -129,17 +186,26 @@ export const ModernCaseDetail: React.FC<CaseDetailProps> = ({ caseId, onBack }) 
                 </span>
               </div>
 
-              <p className="text-slate-400 text-xs font-medium mt-1">
-                {headerLine()}
-              </p>
+              <p className="text-slate-400 text-xs font-medium mt-1">{headerLine()}</p>
             </div>
           </div>
 
           <div className="flex gap-2">
-            <button className="flex items-center gap-2 bg-white/10 hover:bg-white/20 px-4 py-2 rounded-xl text-xs font-bold transition-all border border-white/10">
+            <button
+              onClick={async () => {
+                try {
+                  setError(null);
+                  await downloadCargo(Number(caseId));
+                } catch (e: any) {
+                  setError(e?.message || "No se pudo descargar el atestado/cargo");
+                }
+              }}
+              className="flex items-center gap-2 bg-white/10 hover:bg-white/20 px-4 py-2 rounded-xl text-xs font-bold transition-all border border-white/10"
+            >
               <Download size={16} />
               Atestado Completo
             </button>
+
             <button className="flex items-center gap-2 bg-red-600 hover:bg-red-700 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-lg shadow-red-900/20">
               Cerrar Expediente
             </button>
@@ -147,18 +213,20 @@ export const ModernCaseDetail: React.FC<CaseDetailProps> = ({ caseId, onBack }) 
         </div>
       </div>
 
-      {/* Detail Navigation */}
+      {/* Tabs */}
       <div className="bg-white border-b border-slate-200 px-6 shrink-0">
         <div className="max-w-6xl mx-auto flex gap-8">
           {[
-            { id: "actuaciones", label: "Actuaciones y Diligencias", icon: History },
-            { id: "evidencias", label: "Evidencias Digitales", icon: FileSearch },
-            { id: "interoperabilidad", label: "Consultas Externas", icon: ShieldCheck },
-            { id: "notas", label: "Notas del Instructor", icon: MessageSquare },
+            { id: "actuaciones" as const, label: "Actuaciones y Diligencias", icon: History },
+            { id: "evidencias" as const, label: "Evidencias Digitales", icon: FileSearch },
+            { id: "actualizar" as const, label: "Actualizar Denuncia", icon: FileText },
           ].map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => {
+                setActiveTab(tab.id);
+                if (tab.id !== "actualizar") setUpdateError(null);
+              }}
               className={`flex items-center gap-2 py-4 text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${
                 activeTab === tab.id
                   ? "border-blue-600 text-blue-600"
@@ -172,11 +240,9 @@ export const ModernCaseDetail: React.FC<CaseDetailProps> = ({ caseId, onBack }) 
         </div>
       </div>
 
-      {/* Detail Content */}
+      {/* Content */}
       <div className="flex-1 overflow-y-auto bg-slate-50/50 p-6">
         <div className="max-w-6xl mx-auto space-y-6">
-
-          {/* Loading / error */}
           {loading && (
             <div className="bg-white rounded-3xl border border-slate-200 p-6 text-sm text-slate-500 font-medium">
               Cargando detalle del expediente...
@@ -190,13 +256,18 @@ export const ModernCaseDetail: React.FC<CaseDetailProps> = ({ caseId, onBack }) 
             </div>
           )}
 
+          {/* ACTUACIONES */}
           {!loading && !error && activeTab === "actuaciones" && (
             <div className="space-y-4">
               <div className="flex justify-between items-center">
                 <h3 className="text-sm font-black text-slate-900 uppercase">Línea de Tiempo del Proceso</h3>
-                <button className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-md hover:bg-blue-700 transition-all">
+
+                <button
+                  onClick={handleIrActualizar}
+                  className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-md hover:bg-blue-700 transition-all"
+                >
                   <Plus size={16} />
-                  Añadir Actuación
+                  Actualizar Denuncia
                 </button>
               </div>
 
@@ -221,9 +292,7 @@ export const ModernCaseDetail: React.FC<CaseDetailProps> = ({ caseId, onBack }) 
                         <td className="px-6 py-4">
                           <p className="text-sm font-bold text-slate-900">{act.titulo}</p>
                         </td>
-                        <td className="px-6 py-4 text-xs font-medium text-slate-600">
-                          {act.responsable}
-                        </td>
+                        <td className="px-6 py-4 text-xs font-medium text-slate-600">{act.responsable}</td>
                         <td className="px-6 py-4">
                           <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
                             {act.tipo}
@@ -247,10 +316,18 @@ export const ModernCaseDetail: React.FC<CaseDetailProps> = ({ caseId, onBack }) 
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex justify-center gap-2">
-                            <button className="p-2 hover:bg-blue-50 text-blue-600 rounded-lg transition-colors">
+                            <button
+                              onClick={() => setSelectedAct(act)}
+                              className="p-2 hover:bg-blue-50 text-blue-600 rounded-lg transition-colors"
+                              title="Ver detalle"
+                            >
                               <ExternalLink size={16} />
                             </button>
-                            <button className="p-2 hover:bg-slate-100 text-slate-400 rounded-lg transition-colors">
+                            <button
+                              disabled
+                              className="p-2 rounded-lg text-slate-300 cursor-not-allowed"
+                              title="Descarga no disponible aún"
+                            >
                               <Download size={16} />
                             </button>
                           </div>
@@ -271,10 +348,14 @@ export const ModernCaseDetail: React.FC<CaseDetailProps> = ({ caseId, onBack }) 
             </div>
           )}
 
+          {/* EVIDENCIAS */}
           {!loading && !error && activeTab === "evidencias" && (
             <div className="grid grid-cols-3 gap-6">
               {evidencias.map((e) => (
-                <div key={e.id} className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm space-y-4 hover:border-blue-300 transition-all group">
+                <div
+                  key={e.id}
+                  className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm space-y-4 hover:border-blue-300 transition-all group"
+                >
                   <div className="aspect-video bg-slate-100 rounded-2xl flex items-center justify-center text-slate-300 overflow-hidden relative">
                     <FileText size={48} className="group-hover:scale-110 transition-transform" />
                     <div className="absolute inset-0 bg-blue-600/0 group-hover:bg-blue-600/10 transition-colors" />
@@ -283,7 +364,7 @@ export const ModernCaseDetail: React.FC<CaseDetailProps> = ({ caseId, onBack }) 
                   <div className="space-y-1">
                     <h4 className="text-xs font-black uppercase text-slate-900 truncate">{e.filename}</h4>
                     <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">
-                      {(Math.round((e.size_bytes || 0) / 1024))} KB
+                      {kb(e.size_bytes)} KB
                     </p>
                   </div>
 
@@ -292,10 +373,25 @@ export const ModernCaseDetail: React.FC<CaseDetailProps> = ({ caseId, onBack }) 
                       <ShieldCheck size={12} />
                       HASH VERIFICADO
                     </span>
-                    <span className="text-[9px] font-mono text-slate-400 truncate max-w-[160px]">
-                      {e.sha256}
-                    </span>
+                    <span className="text-[9px] font-mono text-slate-400 truncate max-w-[160px]">{e.sha256}</span>
                   </div>
+
+                  {/* ✅ AQUÍ VA EL BOTÓN DE DESCARGA */}
+                  <button
+                    onClick={async () => {
+                      try {
+                        setError(null);
+                        await downloadEvidence(caseId, e.id, e.filename);
+                      } catch (err: any) {
+                        setError(err?.message || "No se pudo descargar la evidencia");
+                      }
+                    }}
+                    className="w-full flex items-center justify-center gap-2 bg-white border border-slate-200 rounded-xl py-2 text-xs font-black uppercase text-slate-700 hover:bg-slate-50"
+                    title="Descargar evidencia"
+                  >
+                    <Download size={16} />
+                    Descargar
+                  </button>
                 </div>
               ))}
 
@@ -312,63 +408,177 @@ export const ModernCaseDetail: React.FC<CaseDetailProps> = ({ caseId, onBack }) 
             </div>
           )}
 
-          {!loading && !error && activeTab === "interoperabilidad" && (
-            <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden">
-              <div className="p-6 bg-slate-900 text-white flex justify-between items-center">
-                <div className="flex items-center gap-3">
-                  <ShieldCheck size={24} className="text-blue-400" />
-                  <div>
-                    <h3 className="font-black text-sm uppercase tracking-tight">Pasarela de Interoperabilidad PNP</h3>
-                    <p className="text-[10px] text-slate-400 font-medium">Conexión encriptada con bases de datos externas</p>
+          {/* ACTUALIZAR DENUNCIA */}
+          {!loading && !error && activeTab === "actualizar" && (
+            <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm">
+              <div className="p-6 border-b border-slate-100">
+                <h3 className="text-sm font-black text-slate-900 uppercase">Actualizar Denuncia</h3>
+                <p className="text-xs text-slate-500 font-medium mt-1">
+                  Registra una nueva actuación/diligencia asociada al expediente.
+                </p>
+              </div>
+
+              <div className="p-6 grid grid-cols-2 gap-6">
+                <div className="col-span-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                    Título de la actuación
+                  </label>
+                  <input
+                    value={updTitulo}
+                    onChange={(e) => {
+                      setUpdTitulo(e.target.value);
+                      if (updateError) setUpdateError(null);
+                    }}
+                    className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm font-medium outline-none focus:border-blue-400"
+                    placeholder="Ej: Recepción de declaración / Inspección ocular / Oficio..."
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tipo</label>
+                  <select
+                    value={updTipo}
+                    onChange={(e) => setUpdTipo(e.target.value as any)}
+                    className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm font-bold outline-none focus:border-blue-400"
+                  >
+                    <option value="ACTA">ACTA</option>
+                    <option value="OFICIO">OFICIO</option>
+                    <option value="CONSULTA">CONSULTA</option>
+                    <option value="EVIDENCIA">EVIDENCIA</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Estado</label>
+                  <select
+                    value={updEstado}
+                    onChange={(e) => setUpdEstado(e.target.value as any)}
+                    className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm font-bold outline-none focus:border-blue-400"
+                  >
+                    <option value="PENDIENTE">PENDIENTE</option>
+                    <option value="COMPLETADO">COMPLETADO</option>
+                    <option value="DIGITALIZADO">DIGITALIZADO</option>
+                  </select>
+                </div>
+
+                <div className="col-span-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                    Descripción / Observaciones
+                  </label>
+                  <textarea
+                    value={updDetalle}
+                    onChange={(e) => setUpdDetalle(e.target.value)}
+                    rows={6}
+                    className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm font-medium outline-none focus:border-blue-400"
+                    placeholder="Escribe el detalle de la diligencia..."
+                  />
+                </div>
+
+                {updateError && (
+                  <div className="col-span-2 bg-red-50 border border-red-200 text-red-700 rounded-2xl p-4 text-sm font-bold flex items-center gap-2">
+                    <AlertCircle size={18} />
+                    {updateError}
                   </div>
-                </div>
-                <span className="text-[10px] font-bold bg-green-500/20 text-green-400 px-3 py-1 rounded-full uppercase">
-                  Sistemas Online
-                </span>
-              </div>
+                )}
 
-              <div className="p-8 grid grid-cols-2 gap-8">
-                <div className="p-6 border border-slate-100 rounded-2xl bg-slate-50 space-y-4">
-                  <h4 className="text-xs font-black text-slate-900 uppercase">Consulta de Antecedentes (ESINPOL)</h4>
-                  <p className="text-[11px] text-slate-500 leading-relaxed">
-                    Verificación masiva en bases de datos de antecedentes penales, judiciales y policiales a nivel nacional.
-                  </p>
-
+                <div className="col-span-2 flex justify-end gap-2 pt-2">
                   <button
-                    disabled={loadingQuery === "ESINPOL"}
-                    onClick={() => handleExternal("ESINPOL")}
-                    className="w-full bg-slate-900 text-white py-3 rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-slate-800 transition-all disabled:opacity-60"
+                    onClick={() => {
+                      setActiveTab("actuaciones");
+                      resetActualizarForm();
+                    }}
+                    className="px-4 py-2 rounded-xl text-xs font-bold uppercase border border-slate-200 text-slate-600 hover:bg-slate-50"
                   >
-                    {loadingQuery === "ESINPOL" ? "Ejecutando..." : "Ejecutar Verificación"}
+                    Cancelar
                   </button>
-                </div>
-
-                <div className="p-6 border border-slate-100 rounded-2xl bg-slate-50 space-y-4">
-                  <h4 className="text-xs font-black text-slate-900 uppercase">Búsqueda de Requisitorias (RQ)</h4>
-                  <p className="text-[11px] text-slate-500 leading-relaxed">
-                    Cruce de información con el departamento de requisitorias para identificar órdenes de captura vigentes.
-                  </p>
 
                   <button
-                    disabled={loadingQuery === "RQ"}
-                    onClick={() => handleExternal("RQ")}
-                    className="w-full bg-slate-900 text-white py-3 rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-slate-800 transition-all disabled:opacity-60"
+                    disabled={savingUpdate}
+                    onClick={handleGuardarActualizacion}
+                    className="px-5 py-2 rounded-xl text-xs font-black uppercase bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-60"
                   >
-                    {loadingQuery === "RQ" ? "Consultando..." : "Consultar RQ"}
+                    {savingUpdate ? "Guardando..." : "Guardar actualización"}
                   </button>
                 </div>
               </div>
             </div>
           )}
-
-          {activeTab === "notas" && (
-            <div className="bg-white rounded-3xl border border-slate-200 p-6 text-sm text-slate-500 font-medium">
-              (Pendiente) Notas del instructor — aquí puedes luego conectar a backend si tu informe lo pide.
-            </div>
-          )}
-
         </div>
       </div>
+
+      {/* MODAL: Detalle de actuación */}
+      {selectedAct && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-sm"
+          onClick={() => setSelectedAct(null)} // cerrar al click fuera
+        >
+          <div
+            className="w-full max-w-2xl bg-white rounded-3xl border border-slate-200 shadow-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()} // evita cerrar al click dentro
+          >
+            {/* Header modal */}
+            <div className="px-6 py-5 border-b border-slate-100 flex items-start justify-between">
+              <div className="space-y-1">
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
+                  Detalle de actuación
+                </p>
+                <h3 className="text-lg font-black text-slate-900 leading-tight">
+                  {selectedAct.titulo || "-"}
+                </h3>
+
+                <div className="flex items-center gap-2 flex-wrap pt-1">
+                  <span className="text-[10px] font-black uppercase px-2 py-1 rounded-lg bg-slate-100 text-slate-700 border border-slate-200">
+                    #{selectedAct.id}
+                  </span>
+                  <span className="text-[10px] font-black uppercase px-2 py-1 rounded-lg bg-slate-100 text-slate-700 border border-slate-200">
+                    {selectedAct.tipo || "-"}
+                  </span>
+                  <span
+                    className={`text-[10px] font-black uppercase px-2 py-1 rounded-lg border ${
+                      (selectedAct.estado || "").toUpperCase() === "PENDIENTE"
+                        ? "bg-orange-50 text-orange-700 border-orange-200"
+                        : (selectedAct.estado || "").toUpperCase() === "COMPLETADO"
+                        ? "bg-green-50 text-green-700 border-green-200"
+                        : "bg-blue-50 text-blue-700 border-blue-200"
+                    }`}
+                  >
+                    {estadoLabel(selectedAct.estado)}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setSelectedAct(null)}
+                className="px-4 py-2 rounded-2xl text-xs font-black uppercase bg-slate-900 text-white hover:bg-slate-800 transition"
+              >
+                Cerrar
+              </button>
+            </div>
+
+            {/* Body modal */}
+            <div className="px-6 py-6 grid grid-cols-2 gap-4">
+              <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Fecha</p>
+                <p className="mt-1 text-sm font-black text-slate-900">{selectedAct.fecha || "-"}</p>
+              </div>
+
+              <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Responsable</p>
+                <p className="mt-1 text-sm font-black text-slate-900">{selectedAct.responsable || "-"}</p>
+              </div>
+
+              <div className="col-span-2 p-4 rounded-2xl border border-slate-200">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  Observaciones
+                </p>
+                <p className="mt-2 text-sm text-slate-700 font-medium leading-relaxed">
+                  {selectedAct.detalle || "—"}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
