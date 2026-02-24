@@ -90,6 +90,13 @@ export const ModernRegistration: React.FC = () => {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  const ALLOWED_EXT = [".pdf", ".jpg", ".jpeg", ".png", ".mp4"];
+  const ALLOWED_MIME = ["application/pdf", "image/jpeg", "image/png", "video/mp4"];
+
+  const getExt = (name: string) => {
+    const i = name.lastIndexOf(".");
+    return i >= 0 ? name.slice(i).toLowerCase() : "";
+  };
 
   useEffect(() => {
     const t = setInterval(() => {
@@ -179,18 +186,47 @@ export const ModernRegistration: React.FC = () => {
     const picked = Array.from(e.target.files || []);
     if (picked.length === 0) return;
 
-    setFiles((prev) => {
-      const existing = new Set(prev.map((x) => `${x.file.name}-${x.file.size}`));
-      const toAdd: UIFile[] = [];
-      for (const f of picked) {
-        const key = `${f.name}-${f.size}`;
-        if (!existing.has(key)) {
-          toAdd.push({ file: f, status: "PENDIENTE" });
-        }
-      }
-      return [...prev, ...toAdd];
+    // ✅ 1) Separar válidos vs inválidos
+    const invalid = picked.filter((f) => {
+      const ext = getExt(f.name);
+      const mime = (f.type || "").toLowerCase();
+      return !ALLOWED_EXT.includes(ext) || !ALLOWED_MIME.includes(mime);
     });
 
+    const valid = picked.filter((f) => {
+      const ext = getExt(f.name);
+      const mime = (f.type || "").toLowerCase();
+      return ALLOWED_EXT.includes(ext) && ALLOWED_MIME.includes(mime);
+    });
+
+    // ✅ 2) Si hay inválidos, mostrar mensaje
+    if (invalid.length > 0) {
+      setErrorMsg(
+        `No se pudo cargar: formato inválido (${invalid.map((x) => x.name).join(", ")}). ` +
+          `Solo se permite PDF, JPG, PNG o MP4.`
+      );
+    } else {
+      // si todo ok, limpia error previo
+      setErrorMsg(null);
+    }
+
+    // ✅ 3) Agregar solo válidos, evitando duplicados
+    if (valid.length > 0) {
+      setFiles((prev) => {
+        const existing = new Set(prev.map((x) => `${x.file.name}-${x.file.size}`));
+        const toAdd: UIFile[] = [];
+
+        for (const f of valid) {
+          const key = `${f.name}-${f.size}`;
+          if (!existing.has(key)) {
+            toAdd.push({ file: f, status: "PENDIENTE" });
+          }
+        }
+        return [...prev, ...toAdd];
+      });
+    }
+
+    // ✅ 4) Limpia el input para poder seleccionar el mismo archivo otra vez
     e.target.value = "";
   };
 

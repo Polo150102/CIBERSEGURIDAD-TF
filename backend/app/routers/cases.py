@@ -477,7 +477,32 @@ ALLOWED_CONTENT_TYPES = {
 }
 MAX_FILE_BYTES = 10 * 1024 * 1024  # 10MB
 
+def _sniff_magic(content: bytes) -> str | None:
+    # PDF: %PDF-
+    if content.startswith(b"%PDF-"):
+        return "application/pdf"
 
+    # JPG: FF D8 FF
+    if content[:3] == b"\xFF\xD8\xFF":
+        return "image/jpeg"
+
+    # PNG: 89 50 4E 47 0D 0A 1A 0A
+    if content.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+
+    # MP4: contiene 'ftyp' en los primeros bytes
+    if b"ftyp" in content[:32]:
+        return "video/mp4"
+
+    return None
+
+
+def _is_allowed_by_magic(content: bytes, declared: str) -> bool:
+    magic = _sniff_magic(content)
+    if not magic:
+        return False
+    # Acepta si coincide con lo detectado
+    return magic == declared
 
 @router.post("/{case_id}/evidences")
 async def upload_evidence(
@@ -505,6 +530,13 @@ async def upload_evidence(
     content_type = (file.content_type or "").lower().strip()
     if content_type not in ALLOWED_CONTENT_TYPES:
         raise HTTPException(status_code=415, detail=f"Tipo de archivo no permitido: {content_type}")
+
+    # ✅ Validación anti-renombre (exe->pdf): firma real del archivo
+    if not _is_allowed_by_magic(content, content_type):
+        raise HTTPException(
+            status_code=415,
+            detail="Formato inválido: el contenido del archivo no coincide con el tipo permitido (PDF/JPG/PNG/MP4)."
+        )
 
     sha256 = hashlib.sha256(content).hexdigest()
 
